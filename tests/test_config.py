@@ -26,10 +26,6 @@ class TestConstants:
         assert "NASDAQ" in config.TARGET_EXCHANGES
         assert len(config.TARGET_EXCHANGES) == 2
 
-    def test_api_delay_seconds_default(self):
-        """API_DELAY_SECONDS should be 0.5 seconds."""
-        assert config.API_DELAY_SECONDS == 0.5
-
     def test_top_n_stocks_default(self):
         """TOP_N_STOCKS should be 5."""
         assert config.TOP_N_STOCKS == 5
@@ -67,7 +63,6 @@ class TestGetConfig:
             "min_market_cap",
             "excluded_sectors",
             "target_exchanges",
-            "api_delay_seconds",
             "top_n_stocks",
         ]
         for key in expected_keys:
@@ -81,5 +76,4 @@ class TestGetConfig:
             assert result["min_market_cap"] == config.MIN_MARKET_CAP
             assert result["excluded_sectors"] == config.EXCLUDED_SECTORS
             assert result["target_exchanges"] == config.TARGET_EXCHANGES
-            assert result["api_delay_seconds"] == config.API_DELAY_SECONDS
             assert result["top_n_stocks"] == config.TOP_N_STOCKS

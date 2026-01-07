@@ -84,7 +84,6 @@ Edit `src/config.py` to customize:
 | `EXCLUDED_SECTORS` | Financial Services, Utilities | Sectors to exclude |
 | `TARGET_EXCHANGES` | NYSE, NASDAQ | Exchanges to include |
 | `TOP_N_STOCKS` | 5 | Number of top picks to return |
-| `API_DELAY_SECONDS` | 0.5 | Delay between API calls |
 
 ## Project Structure
 

@@ -6,8 +6,6 @@ from typing import Any, Dict, List, Optional
 
 import yfinance as yf
 
-from src.config import API_DELAY_SECONDS
-
 logger = logging.getLogger(__name__)
 
 # Retry configuration
@@ -88,13 +86,11 @@ class StockDataClient:
 
         for attempt in range(MAX_RETRIES):
             try:
-                # Apply rate limiting delay
+                # Apply backoff delay on retries
                 if attempt > 0:
                     backoff = INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1))
                     logger.info(f"Retry attempt {attempt + 1}, waiting {backoff}s")
                     time.sleep(backoff)
-                else:
-                    time.sleep(API_DELAY_SECONDS)
 
                 logger.debug(f"Fetching data for {symbol}")
                 ticker = yf.Ticker(symbol)

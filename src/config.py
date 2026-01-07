@@ -22,7 +22,6 @@ DISCORD_WEBHOOK_URL: str = os.getenv("DISCORD_WEBHOOK_URL", "")
 MIN_MARKET_CAP: int = 100_000_000  # $100 Million USD
 EXCLUDED_SECTORS: List[str] = ["Financial Services", "Utilities"]
 TARGET_EXCHANGES: List[str] = ["NYSE", "NASDAQ"]
-API_DELAY_SECONDS: float = 0.5  # Delay between API requests for rate limiting
 TOP_N_STOCKS: int = 5  # Number of top stocks to select
 
 
@@ -57,6 +56,5 @@ def get_config() -> dict:
         "min_market_cap": MIN_MARKET_CAP,
         "excluded_sectors": EXCLUDED_SECTORS,
         "target_exchanges": TARGET_EXCHANGES,
-        "api_delay_seconds": API_DELAY_SECONDS,
         "top_n_stocks": TOP_N_STOCKS,
     }
