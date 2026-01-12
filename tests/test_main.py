@@ -10,7 +10,7 @@ from src.stock_data_client import StockDataClient
 
 
 # Sample fixture data for mocking
-SAMPLE_SYMBOLS = ["AAPL", "MSFT", "GOOGL", "META", "NVDA", "AMZN"]
+SAMPLE_SYMBOLS = ["AAPL", "MSFT", "GOOGL", "META", "NVDA", "AMZN", "TSLA"]
 
 SAMPLE_STOCK_DATA = {
     "AAPL": {
@@ -214,6 +214,39 @@ SAMPLE_STOCK_DATA = {
         "market_cap": 1500000000000,
         "total_liabilities": 300000000000,
         "revenue": 500000000000,
+        "sector": "Consumer Cyclical",
+    },
+    "TSLA": {
+        "symbol": "TSLA",
+        "company_name": "Tesla Inc.",
+        "price": 250.00,
+        "ebit": 8000000000,
+        "enterprise_value": 800000000000,
+        "total_assets": 120000000000,
+        "current_liabilities": 30000000000,
+        "net_income": 5000000000,
+        "net_income_prev": 4000000000,
+        "operating_cash_flow": 7000000000,
+        "roa": 0.04,
+        "roa_prev": 0.03,
+        "gross_margin": 0.18,
+        "gross_margin_prev": 0.16,
+        "asset_turnover": 0.70,
+        "asset_turnover_prev": 0.68,
+        "total_assets_prev": 110000000000,
+        "long_term_debt": 2000000000,
+        "long_term_debt_prev": 2500000000,
+        "current_ratio": 2.0,
+        "current_ratio_prev": 1.9,
+        "shares_outstanding": 3000000000,
+        "shares_outstanding_prev": 3200000000,
+        "eps": 1.50,
+        "book_value_per_share": 20.00,
+        "working_capital": 90000000000,
+        "retained_earnings": 30000000000,
+        "market_cap": 800000000000,
+        "total_liabilities": 30000000000,
+        "revenue": 90000000000,
         "sector": "Consumer Cyclical",
     },
 }

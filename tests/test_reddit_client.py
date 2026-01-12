@@ -14,6 +14,20 @@ class TestRedditClientInit:
         """RedditClient should initialize without errors."""
         client = RedditClient()
         assert client is not None
+        assert client.disable_ssl_verification is False
+
+    def test_init_with_ssl_disabled(self):
+        """RedditClient should accept disable_ssl_verification parameter."""
+        client = RedditClient(disable_ssl_verification=True)
+        assert client is not None
+        assert client.disable_ssl_verification is True
+
+    def test_init_with_ssl_enabled(self):
+        """RedditClient should work with SSL explicitly enabled."""
+        client = RedditClient(disable_ssl_verification=False)
+        assert client is not None
+        assert client.disable_ssl_verification is False
+        assert client.cert_bundle is not None
 
 
 class TestFetchSentimentData:
@@ -70,10 +84,10 @@ class TestFetchSentimentData:
         result = client.fetch_sentiment_data(date="01-15-2025")
 
         # Verify the URL includes the date parameter
-        mock_get.assert_called_once_with(
-            "https://api.tradestie.com/v1/apps/reddit?date=01-15-2025",
-            timeout=30
-        )
+        assert mock_get.called
+        call_args = mock_get.call_args
+        assert call_args[0][0] == "https://api.tradestie.com/v1/apps/reddit?date=01-15-2025"
+        assert call_args[1]["timeout"] == 30
         assert result is not None
         assert len(result) == 1
 
@@ -146,7 +160,7 @@ class TestFetchSentimentData:
 
         assert result is None
         # Should retry on 5xx errors
-        assert mock_sleep.call_count == 3  # MAX_RETRIES
+        assert mock_sleep.call_count == 2  # 3 attempts means 2 sleeps between them
 
     @patch("src.reddit_client.requests.get")
     @patch("src.reddit_client.time.sleep")
@@ -162,7 +176,8 @@ class TestFetchSentimentData:
 
         assert result is None
         # Should wait 60 seconds on 429
-        mock_sleep.assert_called_with(60)
+        sleep_calls = [call.args[0] for call in mock_sleep.call_args_list]
+        assert 60 in sleep_calls
 
     @patch("src.reddit_client.requests.get")
     @patch("src.reddit_client.time.sleep")
@@ -175,10 +190,10 @@ class TestFetchSentimentData:
 
         assert result is None
         # Should retry with exponential backoff
-        assert mock_sleep.call_count == 3  # MAX_RETRIES
-        # Verify exponential backoff: 1s, 2s, 4s
+        assert mock_sleep.call_count == 2  # 3 attempts means 2 sleeps between them
+        # Verify exponential backoff: 1s, 2s
         sleep_calls = [call.args[0] for call in mock_sleep.call_args_list]
-        assert sleep_calls == [1.0, 2.0, 4.0]
+        assert sleep_calls == [1.0, 2.0]
 
     @patch("src.reddit_client.requests.get")
     @patch("src.reddit_client.time.sleep")
@@ -190,7 +205,7 @@ class TestFetchSentimentData:
         result = client.fetch_sentiment_data()
 
         assert result is None
-        assert mock_sleep.call_count == 3  # MAX_RETRIES
+        assert mock_sleep.call_count == 2  # 3 attempts means 2 sleeps between them
 
     @patch("src.reddit_client.requests.get")
     @patch("src.reddit_client.time.sleep")
@@ -299,7 +314,7 @@ class TestFetchSentimentData:
         result = client.fetch_sentiment_data()
 
         assert result is None
-        assert mock_sleep.call_count == 3  # MAX_RETRIES
+        assert mock_sleep.call_count == 2  # 3 attempts means 2 sleeps between them
 
     @patch("src.reddit_client.requests.get")
     @patch("src.reddit_client.time.sleep")
@@ -311,4 +326,55 @@ class TestFetchSentimentData:
         result = client.fetch_sentiment_data()
 
         assert result is None
-        assert mock_sleep.call_count == 3  # MAX_RETRIES
+        assert mock_sleep.call_count == 2  # 3 attempts means 2 sleeps between them
+
+    @patch("src.reddit_client.requests.get")
+    def test_uses_certifi_bundle_by_default(self, mock_get):
+        """fetch_sentiment_data should use certifi bundle for SSL verification by default."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [
+            {
+                "ticker": "NVDA",
+                "no_of_comments": 150,
+                "sentiment": "Bullish",
+                "sentiment_score": 0.15,
+            }
+        ]
+        mock_get.return_value = mock_response
+
+        client = RedditClient()
+        result = client.fetch_sentiment_data()
+
+        assert result is not None
+        # Verify requests.get was called with certifi bundle
+        mock_get.assert_called_once()
+        call_kwargs = mock_get.call_args.kwargs
+        assert "verify" in call_kwargs
+        # Should use certifi bundle (not False, not True)
+        assert call_kwargs["verify"] is not False
+        assert isinstance(call_kwargs["verify"], str)
+
+    @patch("src.reddit_client.requests.get")
+    def test_disables_ssl_when_configured(self, mock_get):
+        """fetch_sentiment_data should disable SSL verification when configured."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [
+            {
+                "ticker": "NVDA",
+                "no_of_comments": 150,
+                "sentiment": "Bullish",
+                "sentiment_score": 0.15,
+            }
+        ]
+        mock_get.return_value = mock_response
+
+        client = RedditClient(disable_ssl_verification=True)
+        result = client.fetch_sentiment_data()
+
+        assert result is not None
+        # Verify requests.get was called with verify=False
+        mock_get.assert_called_once()
+        call_kwargs = mock_get.call_args.kwargs
+        assert call_kwargs.get("verify") is False

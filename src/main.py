@@ -14,6 +14,7 @@ from src.config import (
     EXCLUDED_SECTORS,
     TARGET_EXCHANGES,
     TOP_N_STOCKS,
+    DISABLE_SSL_VERIFICATION,
     get_enabled_formulas,
     validate_config,
     ConfigurationError,
@@ -409,7 +410,7 @@ def run() -> int:
     # Initialize Reddit client if Reddit Momentum is enabled
     reddit_client = None
     if "reddit_momentum" in enabled_formulas:
-        reddit_client = RedditClient()
+        reddit_client = RedditClient(disable_ssl_verification=DISABLE_SSL_VERIFICATION)
         logger.info("Reddit Momentum enabled, initialized Reddit client")
 
     logger.info(f"Configuration: Market Cap >= ${MIN_MARKET_CAP:,}")

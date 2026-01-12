@@ -251,7 +251,7 @@ class TestRunRedditMomentum:
 
         assert result is not None
         # Verify fetch was called without date (current implementation doesn't pass date)
-        mock_client.fetch_sentiment_data.assert_called_once_with(None)
+        mock_client.fetch_sentiment_data.assert_called_once_with()
 
 
 class TestMainIntegrationWithReddit:
@@ -403,10 +403,11 @@ class TestMainIntegrationWithReddit:
         results_sent = call_args.kwargs.get("results") or call_args[0][0]
 
         assert "reddit_momentum" in results_sent
+        # Note: SAMPLE_REDDIT_DATA has 5 bullish (NVDA, AAPL, TSLA, MSFT, META) + 2 bearish (GME, AMC)
+        # So we should get 5 results
         assert len(results_sent["reddit_momentum"]) == 5
 
     @patch("src.main.get_enabled_formulas")
-    @patch("src.main.DiscordNotifier")
     @patch("src.main.StockDataClient")
     @patch("src.main.validate_config")
     def test_main_reddit_client_not_initialized_when_disabled(

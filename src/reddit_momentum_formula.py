@@ -153,6 +153,9 @@ def get_top_momentum_picks(df: pd.DataFrame, n: int = 5) -> pd.DataFrame:
         logger.warning("No bullish stocks found in Reddit data")
         return pd.DataFrame()
 
+    # Sort by momentum score descending to ensure we get actual top N
+    bullish_df = bullish_df.sort_values("momentum_score", ascending=False)
+
     # Get top N stocks
     top_picks = bullish_df.head(n).copy()
 

@@ -4,6 +4,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
+import certifi
 import requests
 
 logger = logging.getLogger(__name__)
@@ -19,9 +20,22 @@ API_URL = "https://api.tradestie.com/v1/apps/reddit"
 class RedditClient:
     """Client for fetching Reddit sentiment data from Tradestie API."""
 
-    def __init__(self):
-        """Initialize the Reddit client."""
-        pass
+    def __init__(self, disable_ssl_verification: bool = False):
+        """
+        Initialize the Reddit client.
+
+        Args:
+            disable_ssl_verification: If True, disable SSL verification (NOT recommended
+                for production). Use only for testing/diagnosis when the API server has
+                certificate issues. Default: False.
+        """
+        self.disable_ssl_verification = disable_ssl_verification
+        if disable_ssl_verification:
+            logger.warning(
+                "SSL verification DISABLED - This is insecure and should only be "
+                "used for testing! DO NOT use in production."
+            )
+        self.cert_bundle = certifi.where()
 
     def fetch_sentiment_data(
         self,
@@ -61,8 +75,9 @@ class RedditClient:
 
                 logger.debug(f"Fetching Reddit sentiment data from {url}")
 
-                # Make API request
-                response = requests.get(url, timeout=30)
+                # Make API request with SSL verification handling
+                verify_param = False if self.disable_ssl_verification else self.cert_bundle
+                response = requests.get(url, timeout=30, verify=verify_param)
 
                 # Check for rate limiting (HTTP 429)
                 if response.status_code == 429:
@@ -76,10 +91,22 @@ class RedditClient:
                         logger.error("Max retries exceeded for rate limit")
                         return None
 
-                # Check for other HTTP errors
-                if response.status_code >= 400:
+                # Check for server errors (5xx) - should retry
+                if 500 <= response.status_code < 600:
+                    logger.warning(
+                        f"Reddit API returned server error {response.status_code}, "
+                        f"attempt {attempt + 1}/{MAX_RETRIES}"
+                    )
+                    if attempt == MAX_RETRIES - 1:
+                        logger.error("Max retries exceeded for server error")
+                        return None
+                    # Continue to next retry attempt
+                    continue
+
+                # Check for client errors (4xx except 429) - don't retry
+                if 400 <= response.status_code < 500:
                     logger.error(
-                        f"Reddit API returned error {response.status_code}: {response.text}"
+                        f"Reddit API returned client error {response.status_code}: {response.text}"
                     )
                     return None
 
@@ -132,6 +159,20 @@ class RedditClient:
                 )
                 if attempt == MAX_RETRIES - 1:
                     logger.error("Max retries exceeded for timeout")
+                    return None
+
+            except requests.exceptions.SSLError as e:
+                logger.error(f"SSL Certificate verification failed: {e}")
+                logger.warning(
+                    "The API server's SSL certificate may be expired or invalid. "
+                    "This is a server-side issue with api.tradestie.com"
+                )
+                logger.info(
+                    "To bypass SSL verification for testing, set DISABLE_SSL_VERIFICATION=true "
+                    "in your .env file (NOT recommended for production)"
+                )
+                if attempt == MAX_RETRIES - 1:
+                    logger.error("SSL verification failed after all retries")
                     return None
 
             except requests.exceptions.RequestException as e:

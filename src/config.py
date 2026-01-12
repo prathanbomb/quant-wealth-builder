@@ -44,6 +44,10 @@ ENABLE_ACQUIRER: bool = _parse_bool_env("ENABLE_ACQUIRER", True)
 ENABLE_ALTMAN: bool = _parse_bool_env("ENABLE_ALTMAN", True)
 ENABLE_REDDIT_MOMENTUM: bool = _parse_bool_env("ENABLE_REDDIT_MOMENTUM", True)
 
+# SSL verification options
+# WARNING: Disabling SSL verification is a security risk! Only use for testing/diagnosis.
+DISABLE_SSL_VERIFICATION: bool = _parse_bool_env("DISABLE_SSL_VERIFICATION", False)
+
 # Constants
 MIN_MARKET_CAP: int = 100_000_000  # $100 Million USD
 EXCLUDED_SECTORS: List[str] = ["Financial Services", "Utilities"]
@@ -112,4 +116,5 @@ def get_config() -> dict:
         "enable_acquirer": ENABLE_ACQUIRER,
         "enable_altman": ENABLE_ALTMAN,
         "enable_reddit_momentum": ENABLE_REDDIT_MOMENTUM,
+        "disable_ssl_verification": DISABLE_SSL_VERIFICATION,
     }

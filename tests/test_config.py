@@ -70,6 +70,7 @@ class TestGetConfig:
             "excluded_sectors",
             "target_exchanges",
             "top_n_stocks",
+            "disable_ssl_verification",
         ]
         for key in expected_keys:
             assert key in result
@@ -83,6 +84,7 @@ class TestGetConfig:
             assert result["excluded_sectors"] == config.EXCLUDED_SECTORS
             assert result["target_exchanges"] == config.TARGET_EXCHANGES
             assert result["top_n_stocks"] == config.TOP_N_STOCKS
+            assert result["disable_ssl_verification"] == config.DISABLE_SSL_VERIFICATION
 
     def test_get_config_contains_formula_toggles(self):
         """get_config should contain all formula toggle keys."""
@@ -93,6 +95,7 @@ class TestGetConfig:
             "enable_graham",
             "enable_acquirer",
             "enable_altman",
+            "enable_reddit_momentum",
         ]
         for key in formula_keys:
             assert key in result
@@ -153,6 +156,34 @@ class TestFormulaToggles:
         assert config.ENABLE_GRAHAM is True
         assert config.ENABLE_ACQUIRER is True
         assert config.ENABLE_ALTMAN is True
+        assert config.ENABLE_REDDIT_MOMENTUM is True
+
+
+class TestSSLVerificationConfig:
+    """Tests for SSL verification configuration."""
+
+    def test_disable_ssl_verification_defaults_to_false(self):
+        """DISABLE_SSL_VERIFICATION should default to False (secure by default)."""
+        assert config.DISABLE_SSL_VERIFICATION is False
+
+    @patch.dict("os.environ", {"DISABLE_SSL_VERIFICATION": "true"})
+    def test_disable_ssl_verification_can_be_enabled(self):
+        """DISABLE_SSL_VERIFICATION should be settable via environment variable."""
+        # Reload config to pick up new env var
+        from importlib import reload
+        import src.config as config_module
+        reload(config_module)
+
+        assert config_module.DISABLE_SSL_VERIFICATION is True
+
+    @patch.dict("os.environ", {"DISABLE_SSL_VERIFICATION": "false"})
+    def test_disable_ssl_verification_can_be_disabled(self):
+        """DISABLE_SSL_VERIFICATION should respect 'false' setting."""
+        from importlib import reload
+        import src.config as config_module
+        reload(config_module)
+
+        assert config_module.DISABLE_SSL_VERIFICATION is False
 
 
 class TestGetEnabledFormulas:
@@ -164,14 +195,16 @@ class TestGetEnabledFormulas:
              patch.object(config, "ENABLE_PIOTROSKI", True), \
              patch.object(config, "ENABLE_GRAHAM", True), \
              patch.object(config, "ENABLE_ACQUIRER", True), \
-             patch.object(config, "ENABLE_ALTMAN", True):
+             patch.object(config, "ENABLE_ALTMAN", True), \
+             patch.object(config, "ENABLE_REDDIT_MOMENTUM", True):
             result = get_enabled_formulas()
             assert "magic_formula" in result
             assert "piotroski" in result
             assert "graham" in result
             assert "acquirer" in result
             assert "altman" in result
-            assert len(result) == 5
+            assert "reddit_momentum" in result
+            assert len(result) == 6
 
     def test_get_enabled_formulas_none_enabled(self):
         """get_enabled_formulas returns empty list when all are disabled."""
@@ -179,7 +212,8 @@ class TestGetEnabledFormulas:
              patch.object(config, "ENABLE_PIOTROSKI", False), \
              patch.object(config, "ENABLE_GRAHAM", False), \
              patch.object(config, "ENABLE_ACQUIRER", False), \
-             patch.object(config, "ENABLE_ALTMAN", False):
+             patch.object(config, "ENABLE_ALTMAN", False), \
+             patch.object(config, "ENABLE_REDDIT_MOMENTUM", False):
             result = get_enabled_formulas()
             assert result == []
 
@@ -189,13 +223,15 @@ class TestGetEnabledFormulas:
              patch.object(config, "ENABLE_PIOTROSKI", False), \
              patch.object(config, "ENABLE_GRAHAM", True), \
              patch.object(config, "ENABLE_ACQUIRER", False), \
-             patch.object(config, "ENABLE_ALTMAN", True):
+             patch.object(config, "ENABLE_ALTMAN", True), \
+             patch.object(config, "ENABLE_REDDIT_MOMENTUM", False):
             result = get_enabled_formulas()
             assert "magic_formula" in result
             assert "piotroski" not in result
             assert "graham" in result
             assert "acquirer" not in result
             assert "altman" in result
+            assert "reddit_momentum" not in result
             assert len(result) == 3
 
     def test_get_enabled_formulas_order(self):
@@ -204,7 +240,8 @@ class TestGetEnabledFormulas:
              patch.object(config, "ENABLE_PIOTROSKI", True), \
              patch.object(config, "ENABLE_GRAHAM", True), \
              patch.object(config, "ENABLE_ACQUIRER", True), \
-             patch.object(config, "ENABLE_ALTMAN", True):
+             patch.object(config, "ENABLE_ALTMAN", True), \
+             patch.object(config, "ENABLE_REDDIT_MOMENTUM", True):
             result = get_enabled_formulas()
-            expected_order = ["magic_formula", "piotroski", "graham", "acquirer", "altman"]
+            expected_order = ["magic_formula", "piotroski", "graham", "acquirer", "altman", "reddit_momentum"]
             assert result == expected_order
