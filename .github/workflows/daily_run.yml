@@ -28,6 +28,13 @@ jobs:
       - name: Run Magic Formula Bot
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISABLE_SSL_VERIFICATION: ${{ secrets.DISABLE_SSL_VERIFICATION || 'false' }}
+          ENABLE_MAGIC_FORMULA: ${{ secrets.ENABLE_MAGIC_FORMULA || 'true' }}
+          ENABLE_PIOTROSKI: ${{ secrets.ENABLE_PIOTROSKI || 'true' }}
+          ENABLE_GRAHAM: ${{ secrets.ENABLE_GRAHAM || 'true' }}
+          ENABLE_ACQUIRER: ${{ secrets.ENABLE_ACQUIRER || 'true' }}
+          ENABLE_ALTMAN: ${{ secrets.ENABLE_ALTMAN || 'true' }}
+          ENABLE_REDDIT_MOMENTUM: ${{ secrets.ENABLE_REDDIT_MOMENTUM || 'true' }}
         run: python -m src.main
 
       - name: Check exit code
