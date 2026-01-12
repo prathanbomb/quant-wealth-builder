@@ -462,7 +462,7 @@ class TestSendMultiFormulaAlert:
         }
         enabled = ["magic_formula", "piotroski", "graham", "acquirer", "altman"]
 
-        result = notifier.send_multi_formula_alert(results, "January 2025", enabled)
+        result = notifier.send_multi_formula_alert(results, {}, "January 2025", enabled)
 
         assert result is True
         # Should have sent 1 message (header + 5 formula embeds = 6, fits in 10 limit)
@@ -486,7 +486,7 @@ class TestSendMultiFormulaAlert:
         # Only enable magic_formula and graham
         enabled = ["magic_formula", "graham"]
 
-        result = notifier.send_multi_formula_alert(results, "January 2025", enabled)
+        result = notifier.send_multi_formula_alert(results, {}, "January 2025", enabled)
 
         assert result is True
 
@@ -506,7 +506,7 @@ class TestSendMultiFormulaAlert:
         }
         enabled = ["magic_formula", "piotroski", "graham"]
 
-        result = notifier.send_multi_formula_alert(results, "January 2025", enabled)
+        result = notifier.send_multi_formula_alert(results, {}, "January 2025", enabled)
 
         assert result is True
 
@@ -522,7 +522,7 @@ class TestSendMultiFormulaAlert:
         }
         enabled = ["magic_formula", "piotroski", "graham", "acquirer", "altman"]
 
-        result = notifier.send_multi_formula_alert(results, "January 2025", enabled)
+        result = notifier.send_multi_formula_alert(results, {}, "January 2025", enabled)
 
         assert result is False
         assert mock_post.call_count == 0
@@ -540,7 +540,7 @@ class TestSendMultiFormulaAlert:
         }
         enabled = ["magic_formula"]
 
-        notifier.send_multi_formula_alert(results, "January 2025", enabled)
+        notifier.send_multi_formula_alert(results, {}, "January 2025", enabled)
 
         # First message should contain header + formula embed
         first_call_payload = mock_post.call_args_list[0].kwargs.get("json")
@@ -561,7 +561,7 @@ class TestSendMultiFormulaAlert:
         }
         enabled = ["magic_formula"]
 
-        notifier.send_multi_formula_alert(results, "January 2025", enabled)
+        notifier.send_multi_formula_alert(results, {}, "January 2025", enabled)
 
         # Get the last message payload
         last_call_payload = mock_post.call_args_list[-1].kwargs.get("json")
@@ -583,7 +583,7 @@ class TestSendMultiFormulaAlert:
         }
         enabled = ["magic_formula"]
 
-        result = notifier.send_multi_formula_alert(results, "January 2025", enabled)
+        result = notifier.send_multi_formula_alert(results, {}, "January 2025", enabled)
 
         assert result is False
 
@@ -598,6 +598,6 @@ class TestSendMultiFormulaAlert:
         }
         enabled = ["magic_formula"]
 
-        result = notifier.send_multi_formula_alert(results, "January 2025", enabled)
+        result = notifier.send_multi_formula_alert(results, {}, "January 2025", enabled)
 
         assert result is False

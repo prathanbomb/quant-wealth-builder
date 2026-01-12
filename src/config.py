@@ -43,10 +43,15 @@ ENABLE_GRAHAM: bool = _parse_bool_env("ENABLE_GRAHAM", True)
 ENABLE_ACQUIRER: bool = _parse_bool_env("ENABLE_ACQUIRER", True)
 ENABLE_ALTMAN: bool = _parse_bool_env("ENABLE_ALTMAN", True)
 ENABLE_REDDIT_MOMENTUM: bool = _parse_bool_env("ENABLE_REDDIT_MOMENTUM", True)
+ENABLE_PORTFOLIO_ANALYZER: bool = _parse_bool_env("ENABLE_PORTFOLIO_ANALYZER", False)
 
 # SSL verification options
 # WARNING: Disabling SSL verification is a security risk! Only use for testing/diagnosis.
 DISABLE_SSL_VERIFICATION: bool = _parse_bool_env("DISABLE_SSL_VERIFICATION", False)
+
+# Portfolio analyzer configuration
+PORTFOLIO_HISTORY_PERIOD: str = os.getenv("PORTFOLIO_HISTORY_PERIOD", "1y")
+PORTFOLIO_RISK_FREE_RATE: float = float(os.getenv("PORTFOLIO_RISK_FREE_RATE", "0.02"))
 
 # Constants
 MIN_MARKET_CAP: int = 100_000_000  # $100 Million USD
@@ -94,6 +99,8 @@ def get_enabled_formulas() -> List[str]:
         formulas.append("altman")
     if ENABLE_REDDIT_MOMENTUM:
         formulas.append("reddit_momentum")
+    if ENABLE_PORTFOLIO_ANALYZER:
+        formulas.append("portfolio_analyzer")
     return formulas
 
 
@@ -116,5 +123,8 @@ def get_config() -> dict:
         "enable_acquirer": ENABLE_ACQUIRER,
         "enable_altman": ENABLE_ALTMAN,
         "enable_reddit_momentum": ENABLE_REDDIT_MOMENTUM,
+        "enable_portfolio_analyzer": ENABLE_PORTFOLIO_ANALYZER,
         "disable_ssl_verification": DISABLE_SSL_VERIFICATION,
+        "portfolio_history_period": PORTFOLIO_HISTORY_PERIOD,
+        "portfolio_risk_free_rate": PORTFOLIO_RISK_FREE_RATE,
     }

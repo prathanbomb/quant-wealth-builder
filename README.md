@@ -4,7 +4,7 @@ Automated stock screening bot that implements multiple value investing formulas 
 
 ## Supported Formulas
 
-The bot supports 6 formulas combining fundamental analysis with social sentiment:
+The bot supports 6 formulas combining fundamental analysis with social sentiment, plus portfolio-level risk analysis:
 
 ### 1. Magic Formula (Greenblatt)
 Combines two key metrics to find "good" companies at "cheap" prices:
@@ -47,10 +47,24 @@ Social sentiment analysis from Reddit's r/Wallstreetbets community:
 - Only ranks stocks with Bullish sentiment
 - Updates every 15 minutes
 
+### 7. Portfolio Analyzer
+Portfolio-level risk analysis and optimization for each formula's top picks (via Portfolio Optimizer API):
+- **Risk Metrics** (Phase 1):
+  - **Volatility**: Portfolio risk (standard deviation of returns)
+  - **Sharpe Ratio**: Risk-adjusted return (higher is better)
+  - **Diversification Ratio**: Benefit from diversification (values > 1.0 indicate diversification benefit)
+- **Optimized Portfolios** (Phase 2):
+  - **Max Sharpe Portfolio**: Optimal weights for maximum risk-adjusted returns
+  - **Min Variance Portfolio**: Optimal weights for lowest portfolio volatility
+  - **Equal Risk Portfolio**: Risk parity allocation (each asset contributes equal risk)
+- Uses 1 year of historical price data for covariance matrix computation
+- Disabled by default (opt-in feature)
+
 ## Features
 
 - Fetches financial data from Yahoo Finance (via yfinance)
 - Fetches social sentiment data from Reddit r/Wallstreetbets (via Tradestie API)
+- Fetches historical price data and computes portfolio risk metrics (via Portfolio Optimizer API)
 - Screens 88 major US stocks across multiple sectors
 - Filters by market cap ($100M+) and excludes Financial/Utilities sectors
 - Runs multiple formulas concurrently (all enabled by default)
@@ -79,6 +93,7 @@ Social sentiment analysis from Reddit's r/Wallstreetbets community:
    - Name: `ENABLE_ACQUIRER` (optional, default: true)
    - Name: `ENABLE_ALTMAN` (optional, default: true)
    - Name: `ENABLE_REDDIT_MOMENTUM` (optional, default: true)
+   - Name: `ENABLE_PORTFOLIO_ANALYZER` (optional, default: false)
 
 At least one formula must be enabled for the bot to run.
 
@@ -127,6 +142,10 @@ Environment variables (in `.env` or GitHub Secrets):
 | `ENABLE_ACQUIRER` | true | Enable Acquirer's Multiple screening |
 | `ENABLE_ALTMAN` | true | Enable Altman Z-Score screening |
 | `ENABLE_REDDIT_MOMENTUM` | true | Enable Reddit Momentum screening |
+| `ENABLE_PORTFOLIO_ANALYZER` | false | Enable Portfolio Analyzer (risk metrics & optimization) |
+| `PORTFOLIO_HISTORY_PERIOD` | 1y | Historical data period for portfolio analysis |
+| `PORTFOLIO_RISK_FREE_RATE` | 0.02 | Risk-free rate for Sharpe ratio calculation (2%) |
+| `DISABLE_SSL_VERIFICATION` | false | Disable SSL verification (for API certificate issues) |
 
 Additional configuration in `src/config.py`:
 
@@ -142,20 +161,22 @@ Additional configuration in `src/config.py`:
 ```
 quant-wealth-builder/
 ├── src/
-│   ├── config.py                  # Configuration and env vars
-│   ├── stock_data_client.py        # yfinance data fetching
-│   ├── reddit_client.py            # Tradestie Reddit API client
-│   ├── magic_formula.py            # Magic Formula calculations
-│   ├── piotroski_fscore.py         # Piotroski F-Score calculations
-│   ├── graham_number.py            # Graham Number calculations
-│   ├── acquirer_multiple.py        # Acquirer's Multiple calculations
-│   ├── altman_zscore.py            # Altman Z-Score calculations
-│   ├── reddit_momentum_formula.py  # Reddit Momentum calculations
-│   ├── discord_notifier.py         # Discord webhook integration
-│   └── main.py                     # Main orchestrator
-├── tests/                          # Test suite (300+ tests)
-├── .github/workflows/              # GitHub Actions workflow
-└── requirements.txt                # Python dependencies
+│   ├── config.py                      # Configuration and env vars
+│   ├── stock_data_client.py            # yfinance data fetching
+│   ├── reddit_client.py                # Tradestie Reddit API client
+│   ├── portfolio_optimizer_client.py   # Portfolio Optimizer API client
+│   ├── portfolio_data_utils.py         # Historical data & covariance utils
+│   ├── magic_formula.py                # Magic Formula calculations
+│   ├── piotroski_fscore.py             # Piotroski F-Score calculations
+│   ├── graham_number.py                # Graham Number calculations
+│   ├── acquirer_multiple.py            # Acquirer's Multiple calculations
+│   ├── altman_zscore.py                # Altman Z-Score calculations
+│   ├── reddit_momentum_formula.py      # Reddit Momentum calculations
+│   ├── discord_notifier.py             # Discord webhook integration
+│   └── main.py                         # Main orchestrator
+├── tests/                              # Test suite (349+ tests)
+├── .github/workflows/                  # GitHub Actions workflow
+└── requirements.txt                    # Python dependencies
 ```
 
 ## Formula Output Examples
@@ -168,6 +189,10 @@ Each formula produces a separate top 5 list with formula-specific metrics:
 - **Acquirer's Multiple**: Symbol, Price, EV/EBIT multiple
 - **Altman Z-Score**: Symbol, Price, Z-Score, Risk Zone indicator
 - **Reddit Momentum**: Symbol, Comment Count, Momentum Score, Sentiment (Bullish/Bearish)
+
+**Portfolio Analyzer** (when enabled) adds portfolio metrics to each formula:
+- Risk metrics: Volatility, Sharpe Ratio, Diversification Ratio
+- Optimized portfolios: Max Sharpe weights, Min Variance weights, Equal Risk weights
 
 ## Discord Notification Example
 
@@ -186,6 +211,28 @@ Top 5 trending stocks on r/Wallstreetbets (discussion volume + positive sentimen
 ...
 ```
 
+When Portfolio Analyzer is enabled, each formula section includes portfolio metrics:
+
+```
+📊 Portfolio Analysis (5 stocks)
+📈 Volatility: 18.5%
+🎯 Sharpe Ratio: 1.23
+🔄 Diversification: 1.45x
+
+**Max Sharpe Weights:**
+AAPL: 35.0%, MSFT: 28.0%, GOOGL: 22.0%
+Exp. Return: 15.2%
+Volatility: 16.8%
+
+**Min Variance Weights:**
+GOOGL: 30.0%, MSFT: 25.0%, AAPL: 20.0%
+Volatility: 14.2%
+
+**Equal Risk Weights:**
+AAPL: 22.0%, MSFT: 22.0%, GOOGL: 22.0%
+Volatility: 15.8%
+```
+
 ## References
 
 - *The Little Book That Beats the Market* by Joel Greenblatt (Magic Formula)
@@ -194,6 +241,7 @@ Top 5 trending stocks on r/Wallstreetbets (discussion volume + positive sentimen
 - *Super Stocks* by Kenneth L. Fisher (Acquirer's Multiple)
 - *Financial Ratios, Discriminant Analysis and the Prediction of Corporate Bankruptcy* by Edward I. Altman (Z-Score)
 - [Tradestie Reddit WallstreetBets API](https://tradestie.com/apps/reddit/api/) (Social sentiment data)
+- [Portfolio Optimizer API](https://portfoliooptimizer.io/) (Portfolio analysis and optimization)
 
 ## Disclaimer
 

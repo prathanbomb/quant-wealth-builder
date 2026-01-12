@@ -38,6 +38,18 @@ from src.reddit_momentum_formula import (
     get_top_momentum_picks,
 )
 
+# Portfolio analyzer imports
+from src.portfolio_optimizer_client import PortfolioOptimizerClient
+from src.portfolio_data_utils import (
+    fetch_historical_returns,
+    compute_covariance_matrix,
+    compute_expected_returns,
+)
+from src.config import (
+    PORTFOLIO_HISTORY_PERIOD,
+    PORTFOLIO_RISK_FREE_RATE,
+)
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -377,6 +389,177 @@ def run_reddit_momentum(
     return top_picks.to_dict("records")
 
 
+def run_portfolio_analysis(
+    formula_name: str,
+    formula_results: List[Dict[str, Any]],
+    portfolio_client: PortfolioOptimizerClient,
+) -> Optional[Dict[str, Any]]:
+    """
+    Run portfolio analysis on a formula's top picks.
+
+    Analyzes portfolio-level risk metrics for a formula's top stock picks.
+
+    Args:
+        formula_name: Name of the formula (e.g., "magic_formula")
+        formula_results: List of top stock dicts from the formula
+        portfolio_client: Initialized PortfolioOptimizerClient
+
+    Returns:
+        Dict with portfolio metrics, or None if analysis fails:
+        {
+            "formula_name": str,
+            "num_stocks": int,
+            "metrics": {
+                "volatility": {...},           # from analyze_volatility
+                "sharpe_ratio": {...},         # from analyze_sharpe_ratio
+                "diversification_ratio": {...} # from analyze_diversification_ratio
+            }
+        }
+    """
+    # Need at least 2 stocks for portfolio analysis
+    if not formula_results or len(formula_results) < 2:
+        logger.warning(
+            f"Insufficient stocks for portfolio analysis: {formula_name} "
+            f"({len(formula_results) if formula_results else 0} stocks)"
+        )
+        return None
+
+    # Extract symbols from results
+    # Handle both 'symbol' key (from stock formulas) and 'ticker' key (from Reddit)
+    symbols = []
+    for stock in formula_results:
+        if "symbol" in stock:
+            symbols.append(stock["symbol"])
+        elif "ticker" in stock:
+            symbols.append(stock["ticker"])
+        else:
+            logger.warning(f"Stock missing symbol/ticker: {stock}")
+            continue
+
+    if len(symbols) < 2:
+        logger.warning(
+            f"Insufficient valid symbols for portfolio analysis: {formula_name}"
+        )
+        return None
+
+    logger.info(
+        f"Running portfolio analysis for {formula_name}: {len(symbols)} stocks"
+    )
+
+    # Step 1: Fetch historical returns
+    logger.info(
+        f"Fetching historical returns ({PORTFOLIO_HISTORY_PERIOD}) for "
+        f"{formula_name} portfolio..."
+    )
+    returns_df = fetch_historical_returns(symbols, period=PORTFOLIO_HISTORY_PERIOD)
+
+    if returns_df is None or returns_df.empty:
+        logger.warning(f"Failed to fetch historical returns for {formula_name}")
+        return None
+
+    # Step 2: Compute covariance matrix
+    logger.info("Computing covariance matrix...")
+    cov_matrix = compute_covariance_matrix(returns_df, annualize=True)
+
+    if cov_matrix.size == 0:
+        logger.warning(f"Failed to compute covariance matrix for {formula_name}")
+        return None
+
+    # Step 3: Compute expected returns
+    logger.info("Computing expected returns...")
+    expected_returns = compute_expected_returns(returns_df, annualize=True)
+
+    if expected_returns.size == 0:
+        logger.warning(f"Failed to compute expected returns for {formula_name}")
+        return None
+
+    # Step 4: Calculate equal weights (for Phase 1 analysis)
+    n = len(symbols)
+    equal_weights = [1.0 / n] * n
+
+    # Step 5: Analyze risk metrics
+    logger.info(f"Calculating risk metrics for {formula_name} portfolio...")
+
+    metrics = {}
+
+    # Volatility
+    vol_result = portfolio_client.analyze_volatility(
+        assets=symbols,
+        weights=equal_weights,
+        covariance_matrix=cov_matrix.tolist()
+    )
+    if vol_result:
+        metrics["volatility"] = vol_result
+
+    # Sharpe Ratio
+    sharpe_result = portfolio_client.analyze_sharpe_ratio(
+        assets=symbols,
+        weights=equal_weights,
+        covariance_matrix=cov_matrix.tolist(),
+        expected_returns=expected_returns.tolist(),
+        risk_free_rate=PORTFOLIO_RISK_FREE_RATE
+    )
+    if sharpe_result:
+        metrics["sharpe_ratio"] = sharpe_result
+
+    # Diversification Ratio
+    div_result = portfolio_client.analyze_diversification_ratio(
+        assets=symbols,
+        weights=equal_weights,
+        covariance_matrix=cov_matrix.tolist()
+    )
+    if div_result:
+        metrics["diversification_ratio"] = div_result
+
+    # Phase 2: Portfolio Construction
+    logger.info(f"Calculating optimized portfolios for {formula_name}...")
+
+    # Maximum Sharpe Ratio portfolio
+    max_sharpe = portfolio_client.maximize_sharpe_ratio(
+        assets=symbols,
+        covariance_matrix=cov_matrix.tolist(),
+        expected_returns=expected_returns.tolist(),
+        risk_free_rate=PORTFOLIO_RISK_FREE_RATE
+    )
+    if max_sharpe:
+        metrics["max_sharpe_portfolio"] = max_sharpe
+        logger.info(f"Max Sharpe portfolio optimized for {formula_name}")
+
+    # Minimum Variance portfolio
+    min_var = portfolio_client.minimize_variance(
+        assets=symbols,
+        covariance_matrix=cov_matrix.tolist()
+    )
+    if min_var:
+        metrics["min_variance_portfolio"] = min_var
+        logger.info(f"Minimum variance portfolio optimized for {formula_name}")
+
+    # Equal Risk Contributions portfolio
+    erc = portfolio_client.equalize_risk_contributions(
+        assets=symbols,
+        covariance_matrix=cov_matrix.tolist()
+    )
+    if erc:
+        metrics["equal_risk_portfolio"] = erc
+        logger.info(f"Equal risk contributions portfolio optimized for {formula_name}")
+
+    # Check if we got any metrics
+    if not metrics:
+        logger.warning(f"No portfolio metrics calculated for {formula_name}")
+        return None
+
+    logger.info(
+        f"Portfolio analysis complete for {formula_name}: "
+        f"{len(metrics)} metrics calculated"
+    )
+
+    return {
+        "formula_name": formula_name,
+        "num_stocks": n,
+        "metrics": metrics
+    }
+
+
 def run() -> int:
     """
     Execute the Multi-Formula Stock Screening Bot logic.
@@ -412,6 +595,14 @@ def run() -> int:
     if "reddit_momentum" in enabled_formulas:
         reddit_client = RedditClient(disable_ssl_verification=DISABLE_SSL_VERIFICATION)
         logger.info("Reddit Momentum enabled, initialized Reddit client")
+
+    # Initialize Portfolio Optimizer client if Portfolio Analyzer is enabled
+    portfolio_client = None
+    if "portfolio_analyzer" in enabled_formulas:
+        portfolio_client = PortfolioOptimizerClient(
+            disable_ssl_verification=DISABLE_SSL_VERIFICATION
+        )
+        logger.info("Portfolio Analyzer enabled, initialized Portfolio Optimizer client")
 
     logger.info(f"Configuration: Market Cap >= ${MIN_MARKET_CAP:,}")
     logger.info(f"Configuration: Exchanges = {TARGET_EXCHANGES}")
@@ -488,6 +679,23 @@ def run() -> int:
         logger.error("No valid results from any enabled formula")
         return 1
 
+    # Run portfolio analysis if enabled
+    portfolio_results: Dict[str, Dict[str, Any]] = {}
+    if "portfolio_analyzer" in enabled_formulas and portfolio_client is not None:
+        logger.info("Running portfolio analysis for all formulas...")
+        for formula_name, formula_stocks in results.items():
+            portfolio_metrics = run_portfolio_analysis(
+                formula_name=formula_name,
+                formula_results=formula_stocks,
+                portfolio_client=portfolio_client
+            )
+            if portfolio_metrics:
+                portfolio_results[formula_name] = portfolio_metrics
+                logger.info(
+                    f"Portfolio analysis completed for {formula_name}: "
+                    f"{len(portfolio_metrics['metrics'])} metrics"
+                )
+
     # Get current month/year
     month_year = datetime.now().strftime("%B %Y")
 
@@ -495,6 +703,7 @@ def run() -> int:
     logger.info("Sending Discord notification...")
     success = discord_notifier.send_multi_formula_alert(
         results=results,
+        portfolio_results=portfolio_results,
         month_year=month_year,
         enabled_formulas=enabled_formulas,
     )

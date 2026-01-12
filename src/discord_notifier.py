@@ -14,6 +14,7 @@ GRAHAM_COLOR = 15105570  # Orange for Graham Number
 ACQUIRER_COLOR = 10181038  # Purple for Acquirer's Multiple
 ALTMAN_COLOR = 2326507  # Red for Z-Score
 REDDIT_COLOR = 16776960  # Yellow/Orange for Reddit Momentum
+PORTFOLIO_COLOR = 9442302  # Teal for Portfolio Analysis
 
 # Emoji for risk zone indicators
 SAFE_EMOJI = "🟢"
@@ -290,6 +291,101 @@ class DiscordNotifier:
             "inline": False,
         }
 
+    def _format_portfolio_metrics(self, portfolio_data: Dict[str, Any]) -> str:
+        """
+        Format portfolio metrics for Discord embed field.
+
+        Args:
+            portfolio_data: Portfolio analysis results with keys:
+                - num_stocks: Number of stocks in the portfolio
+                - metrics: Dict containing volatility, sharpe_ratio, diversification_ratio,
+                          max_sharpe_portfolio, min_variance_portfolio, equal_risk_portfolio
+
+        Returns:
+            Formatted string with portfolio metrics.
+        """
+        metrics = portfolio_data.get("metrics", {})
+        num_stocks = portfolio_data.get("num_stocks", 0)
+
+        lines = [f"📊 **Portfolio Analysis** ({num_stocks} stocks)"]
+
+        # Phase 1: Risk Metrics
+        if "volatility" in metrics:
+            vol = metrics["volatility"].get("portfolioVolatility", 0)
+            lines.append(f"📈 Volatility: {vol:.2%}")
+
+        if "sharpe_ratio" in metrics:
+            sharpe = metrics["sharpe_ratio"].get("sharpeRatio", 0)
+            lines.append(f"🎯 Sharpe Ratio: {sharpe:.2f}")
+
+        if "diversification_ratio" in metrics:
+            div = metrics["diversification_ratio"].get("diversificationRatio", 0)
+            lines.append(f"🔄 Diversification: {div:.2f}x")
+
+        # Phase 2: Optimized Portfolios
+        # Helper function to format weights
+        def format_weights(weights_dict: Dict[str, float], max_display: int = 3) -> str:
+            """Format portfolio weights for display."""
+            if not weights_dict:
+                return "N/A"
+
+            # Sort by weight descending
+            sorted_weights = sorted(
+                weights_dict.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )
+
+            # Format top N weights
+            weight_lines = []
+            for symbol, weight in sorted_weights[:max_display]:
+                weight_lines.append(f"{symbol}: {weight:.1%}")
+
+            # Add "+X more" if there are additional assets
+            if len(sorted_weights) > max_display:
+                weight_lines.append(f"+{len(sorted_weights) - max_display} more")
+
+            return ", ".join(weight_lines)
+
+        # Max Sharpe Portfolio
+        if "max_sharpe_portfolio" in metrics:
+            max_sharpe = metrics["max_sharpe_portfolio"]
+            weights = max_sharpe.get("optimalWeights", {})
+            lines.append(f"\n**Max Sharpe Weights:**")
+            lines.append(format_weights(weights))
+
+            # Include expected return and volatility if available
+            if "expectedReturn" in max_sharpe:
+                exp_ret = max_sharpe.get("expectedReturn", 0)
+                lines.append(f"Exp. Return: {exp_ret:.2%}")
+            if "volatility" in max_sharpe:
+                vol = max_sharpe.get("volatility", 0)
+                lines.append(f"Volatility: {vol:.2%}")
+
+        # Min Variance Portfolio
+        if "min_variance_portfolio" in metrics:
+            min_var = metrics["min_variance_portfolio"]
+            weights = min_var.get("optimalWeights", {})
+            lines.append(f"\n**Min Variance Weights:**")
+            lines.append(format_weights(weights))
+
+            if "volatility" in min_var:
+                vol = min_var.get("volatility", 0)
+                lines.append(f"Volatility: {vol:.2%}")
+
+        # Equal Risk Portfolio
+        if "equal_risk_portfolio" in metrics:
+            equal_risk = metrics["equal_risk_portfolio"]
+            weights = equal_risk.get("optimalWeights", {})
+            lines.append(f"\n**Equal Risk Weights:**")
+            lines.append(format_weights(weights))
+
+            if "volatility" in equal_risk:
+                vol = equal_risk.get("volatility", 0)
+                lines.append(f"Volatility: {vol:.2%}")
+
+        return "\n".join(lines)
+
     def _build_formula_embed(
         self,
         formula_name: str,
@@ -328,6 +424,7 @@ class DiscordNotifier:
     def send_multi_formula_alert(
         self,
         results: Dict[str, List[Dict[str, Any]]],
+        portfolio_results: Dict[str, Dict[str, Any]],
         month_year: str,
         enabled_formulas: List[str],
     ) -> bool:
@@ -339,7 +436,9 @@ class DiscordNotifier:
 
         Args:
             results: Dictionary mapping formula names to their top stocks lists.
-                Keys: "magic_formula", "piotroski", "graham", "acquirer", "altman"
+                Keys: "magic_formula", "piotroski", "graham", "acquirer", "altman", "reddit_momentum"
+            portfolio_results: Dictionary mapping formula names to portfolio metrics.
+                Keys: "magic_formula", "piotroski", etc.
             month_year: Display string for month/year (e.g., "January 2025").
             enabled_formulas: List of formula names that were enabled.
 
@@ -362,6 +461,16 @@ class DiscordNotifier:
                     stocks=stocks,
                     formatter_fn=self._format_stock_field,
                 )
+                # Add portfolio metrics if available
+                if "magic_formula" in portfolio_results:
+                    portfolio_field = {
+                        "name": "Portfolio Metrics",
+                        "value": self._format_portfolio_metrics(
+                            portfolio_results["magic_formula"]
+                        ),
+                        "inline": False,
+                    }
+                    embed["fields"].append(portfolio_field)
                 all_embeds.append(embed)
 
         # Piotroski F-Score embed
@@ -377,6 +486,15 @@ class DiscordNotifier:
                     stocks=stocks,
                     formatter_fn=self._format_piotroski_field,
                 )
+                if "piotroski" in portfolio_results:
+                    portfolio_field = {
+                        "name": "Portfolio Metrics",
+                        "value": self._format_portfolio_metrics(
+                            portfolio_results["piotroski"]
+                        ),
+                        "inline": False,
+                    }
+                    embed["fields"].append(portfolio_field)
                 all_embeds.append(embed)
 
         # Graham Number embed
@@ -392,6 +510,15 @@ class DiscordNotifier:
                     stocks=stocks,
                     formatter_fn=self._format_graham_field,
                 )
+                if "graham" in portfolio_results:
+                    portfolio_field = {
+                        "name": "Portfolio Metrics",
+                        "value": self._format_portfolio_metrics(
+                            portfolio_results["graham"]
+                        ),
+                        "inline": False,
+                    }
+                    embed["fields"].append(portfolio_field)
                 all_embeds.append(embed)
 
         # Acquirer's Multiple embed
@@ -407,6 +534,15 @@ class DiscordNotifier:
                     stocks=stocks,
                     formatter_fn=self._format_acquirer_field,
                 )
+                if "acquirer" in portfolio_results:
+                    portfolio_field = {
+                        "name": "Portfolio Metrics",
+                        "value": self._format_portfolio_metrics(
+                            portfolio_results["acquirer"]
+                        ),
+                        "inline": False,
+                    }
+                    embed["fields"].append(portfolio_field)
                 all_embeds.append(embed)
 
         # Altman Z-Score embed
@@ -422,6 +558,15 @@ class DiscordNotifier:
                     stocks=stocks,
                     formatter_fn=self._format_altman_field,
                 )
+                if "altman" in portfolio_results:
+                    portfolio_field = {
+                        "name": "Portfolio Metrics",
+                        "value": self._format_portfolio_metrics(
+                            portfolio_results["altman"]
+                        ),
+                        "inline": False,
+                    }
+                    embed["fields"].append(portfolio_field)
                 all_embeds.append(embed)
 
         # Reddit Momentum embed
@@ -437,6 +582,15 @@ class DiscordNotifier:
                     stocks=stocks,
                     formatter_fn=self._format_reddit_field,
                 )
+                if "reddit_momentum" in portfolio_results:
+                    portfolio_field = {
+                        "name": "Portfolio Metrics",
+                        "value": self._format_portfolio_metrics(
+                            portfolio_results["reddit_momentum"]
+                        ),
+                        "inline": False,
+                    }
+                    embed["fields"].append(portfolio_field)
                 all_embeds.append(embed)
 
         if not all_embeds:

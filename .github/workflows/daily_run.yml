@@ -35,6 +35,7 @@ jobs:
           ENABLE_ACQUIRER: ${{ secrets.ENABLE_ACQUIRER || 'true' }}
           ENABLE_ALTMAN: ${{ secrets.ENABLE_ALTMAN || 'true' }}
           ENABLE_REDDIT_MOMENTUM: ${{ secrets.ENABLE_REDDIT_MOMENTUM || 'true' }}
+          ENABLE_PORTFOLIO_ANALYZER: ${{ secrets.ENABLE_PORTFOLIO_ANALYZER || 'false' }}
         run: python -m src.main
 
       - name: Check exit code
