@@ -19,6 +19,7 @@ from src.config import (
     ConfigurationError,
 )
 from src.stock_data_client import StockDataClient
+from src.reddit_client import RedditClient
 from src.discord_notifier import DiscordNotifier
 from src.magic_formula import (
     calculate_earnings_yield,
@@ -30,6 +31,11 @@ from src.piotroski_fscore import rank_by_fscore, get_top_fscore_picks
 from src.graham_number import rank_by_margin_of_safety, get_top_graham_picks
 from src.acquirer_multiple import rank_by_acquirer_multiple, get_top_acquirer_picks
 from src.altman_zscore import rank_by_zscore, get_top_zscore_picks
+from src.reddit_momentum_formula import (
+    filter_by_stock_universe,
+    rank_by_momentum,
+    get_top_momentum_picks,
+)
 
 # Set up logging
 logging.basicConfig(
@@ -319,6 +325,57 @@ def run_altman(df: pd.DataFrame) -> Optional[List[Dict[str, Any]]]:
     return top_picks.to_dict("records")
 
 
+def run_reddit_momentum(
+    reddit_client: RedditClient,
+    stock_universe: List[str],
+) -> Optional[List[Dict[str, Any]]]:
+    """
+    Execute Reddit Momentum ranking and return top picks.
+
+    Args:
+        reddit_client: Initialized Reddit client.
+        stock_universe: List of valid stock symbols.
+
+    Returns:
+        List of stock dictionaries for top picks, or None if no data available.
+    """
+    logger.info("Fetching Reddit sentiment data...")
+
+    # Fetch raw Reddit data
+    raw_data = reddit_client.fetch_sentiment_data()
+    if raw_data is None:
+        logger.warning("No Reddit data available")
+        return None
+
+    logger.info(f"Received Reddit data for {len(raw_data)} stocks")
+
+    # Filter to stock universe
+    df = filter_by_stock_universe(raw_data, stock_universe)
+    if df.empty:
+        logger.warning("No Reddit data matches stock universe")
+        return None
+
+    logger.info(f"Filtered to {len(df)} stocks in universe")
+
+    # Rank by momentum
+    ranked_df = rank_by_momentum(df)
+    top_picks = get_top_momentum_picks(ranked_df, n=TOP_N_STOCKS)
+
+    if len(top_picks) < TOP_N_STOCKS:
+        logger.warning(
+            f"Only {len(top_picks)} bullish Reddit stocks found (requested {TOP_N_STOCKS})"
+        )
+
+    logger.info(f"Top {len(top_picks)} Reddit Momentum picks:")
+    for idx, row in top_picks.iterrows():
+        logger.info(
+            f"  {idx + 1}. {row['ticker']} - Score: {row['momentum_score']:.2f} "
+            f"({row['sentiment']}, {row['no_of_comments']} comments)"
+        )
+
+    return top_picks.to_dict("records")
+
+
 def run() -> int:
     """
     Execute the Multi-Formula Stock Screening Bot logic.
@@ -348,6 +405,12 @@ def run() -> int:
     # Initialize clients
     stock_client = StockDataClient()
     discord_notifier = DiscordNotifier(webhook_url=DISCORD_WEBHOOK_URL)
+
+    # Initialize Reddit client if Reddit Momentum is enabled
+    reddit_client = None
+    if "reddit_momentum" in enabled_formulas:
+        reddit_client = RedditClient()
+        logger.info("Reddit Momentum enabled, initialized Reddit client")
 
     logger.info(f"Configuration: Market Cap >= ${MIN_MARKET_CAP:,}")
     logger.info(f"Configuration: Exchanges = {TARGET_EXCHANGES}")
@@ -412,6 +475,12 @@ def run() -> int:
         result = run_altman(df)
         if result:
             results["altman"] = result
+
+    # Reddit Momentum (uses separate data source)
+    if "reddit_momentum" in enabled_formulas:
+        result = run_reddit_momentum(reddit_client, symbols)
+        if result:
+            results["reddit_momentum"] = result
 
     # Check if we have any results
     if not results:

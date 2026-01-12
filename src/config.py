@@ -42,6 +42,7 @@ ENABLE_PIOTROSKI: bool = _parse_bool_env("ENABLE_PIOTROSKI", True)
 ENABLE_GRAHAM: bool = _parse_bool_env("ENABLE_GRAHAM", True)
 ENABLE_ACQUIRER: bool = _parse_bool_env("ENABLE_ACQUIRER", True)
 ENABLE_ALTMAN: bool = _parse_bool_env("ENABLE_ALTMAN", True)
+ENABLE_REDDIT_MOMENTUM: bool = _parse_bool_env("ENABLE_REDDIT_MOMENTUM", True)
 
 # Constants
 MIN_MARKET_CAP: int = 100_000_000  # $100 Million USD
@@ -87,6 +88,8 @@ def get_enabled_formulas() -> List[str]:
         formulas.append("acquirer")
     if ENABLE_ALTMAN:
         formulas.append("altman")
+    if ENABLE_REDDIT_MOMENTUM:
+        formulas.append("reddit_momentum")
     return formulas
 
 
@@ -108,4 +111,5 @@ def get_config() -> dict:
         "enable_graham": ENABLE_GRAHAM,
         "enable_acquirer": ENABLE_ACQUIRER,
         "enable_altman": ENABLE_ALTMAN,
+        "enable_reddit_momentum": ENABLE_REDDIT_MOMENTUM,
     }

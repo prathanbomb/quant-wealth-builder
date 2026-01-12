@@ -1,10 +1,10 @@
 # Multi-Formula Stock Screening Bot
 
-Automated stock screening bot that implements multiple value investing formulas. Runs daily on weekdays and sends top stock picks to Discord.
+Automated stock screening bot that implements multiple value investing formulas and social sentiment analysis. Runs daily on weekdays and sends top stock picks to Discord.
 
 ## Supported Formulas
 
-The bot supports 5 proven value investing formulas, each with its own ranking methodology:
+The bot supports 6 formulas combining fundamental analysis with social sentiment:
 
 ### 1. Magic Formula (Greenblatt)
 Combines two key metrics to find "good" companies at "cheap" prices:
@@ -38,9 +38,19 @@ Bankruptcy prediction model assessing financial health:
 - **Distress Zone**: Z < 1.81 (high risk)
 - Only ranks Safe Zone stocks, highest Z-Score first
 
+### 6. Reddit Momentum
+Social sentiment analysis from Reddit's r/Wallstreetbets community:
+- Fetches top 50 stocks discussed on r/Wallstreetbets (via Tradestie API)
+- **Sentiment Score**: Bullish/Bearish sentiment from Reddit comments
+- **Discussion Volume**: Number of comments (logarithmic scaling)
+- **Momentum Score** = (Sentiment Score × 1000) + log(Comments + 1)
+- Only ranks stocks with Bullish sentiment
+- Updates every 15 minutes
+
 ## Features
 
 - Fetches financial data from Yahoo Finance (via yfinance)
+- Fetches social sentiment data from Reddit r/Wallstreetbets (via Tradestie API)
 - Screens 88 major US stocks across multiple sectors
 - Filters by market cap ($100M+) and excludes Financial/Utilities sectors
 - Runs multiple formulas concurrently (all enabled by default)
@@ -68,6 +78,7 @@ Bankruptcy prediction model assessing financial health:
    - Name: `ENABLE_GRAHAM` (optional, default: true)
    - Name: `ENABLE_ACQUIRER` (optional, default: true)
    - Name: `ENABLE_ALTMAN` (optional, default: true)
+   - Name: `ENABLE_REDDIT_MOMENTUM` (optional, default: true)
 
 At least one formula must be enabled for the bot to run.
 
@@ -115,6 +126,7 @@ Environment variables (in `.env` or GitHub Secrets):
 | `ENABLE_GRAHAM` | true | Enable Graham Number screening |
 | `ENABLE_ACQUIRER` | true | Enable Acquirer's Multiple screening |
 | `ENABLE_ALTMAN` | true | Enable Altman Z-Score screening |
+| `ENABLE_REDDIT_MOMENTUM` | true | Enable Reddit Momentum screening |
 
 Additional configuration in `src/config.py`:
 
@@ -130,18 +142,20 @@ Additional configuration in `src/config.py`:
 ```
 quant-wealth-builder/
 ├── src/
-│   ├── config.py              # Configuration and env vars
-│   ├── stock_data_client.py    # yfinance data fetching
-│   ├── magic_formula.py        # Magic Formula calculations
-│   ├── piotroski_fscore.py     # Piotroski F-Score calculations
-│   ├── graham_number.py        # Graham Number calculations
-│   ├── acquirer_multiple.py    # Acquirer's Multiple calculations
-│   ├── altman_zscore.py        # Altman Z-Score calculations
-│   ├── discord_notifier.py     # Discord webhook integration
-│   └── main.py                 # Main orchestrator
-├── tests/                      # Test suite (273 tests)
-├── .github/workflows/          # GitHub Actions workflow
-└── requirements.txt            # Python dependencies
+│   ├── config.py                  # Configuration and env vars
+│   ├── stock_data_client.py        # yfinance data fetching
+│   ├── reddit_client.py            # Tradestie Reddit API client
+│   ├── magic_formula.py            # Magic Formula calculations
+│   ├── piotroski_fscore.py         # Piotroski F-Score calculations
+│   ├── graham_number.py            # Graham Number calculations
+│   ├── acquirer_multiple.py        # Acquirer's Multiple calculations
+│   ├── altman_zscore.py            # Altman Z-Score calculations
+│   ├── reddit_momentum_formula.py  # Reddit Momentum calculations
+│   ├── discord_notifier.py         # Discord webhook integration
+│   └── main.py                     # Main orchestrator
+├── tests/                          # Test suite (300+ tests)
+├── .github/workflows/              # GitHub Actions workflow
+└── requirements.txt                # Python dependencies
 ```
 
 ## Formula Output Examples
@@ -153,6 +167,24 @@ Each formula produces a separate top 5 list with formula-specific metrics:
 - **Graham Number**: Symbol, Price, Fair Value, Margin of Safety %
 - **Acquirer's Multiple**: Symbol, Price, EV/EBIT multiple
 - **Altman Z-Score**: Symbol, Price, Z-Score, Risk Zone indicator
+- **Reddit Momentum**: Symbol, Comment Count, Momentum Score, Sentiment (Bullish/Bearish)
+
+## Discord Notification Example
+
+When enabled, the Reddit Momentum section appears as a yellow/orange embed:
+
+```
+🔥 Reddit Momentum
+Top 5 trending stocks on r/Wallstreetbets (discussion volume + positive sentiment)
+
+🥇 1. NVDA
+💬 250 comments | 📊 Score: 180.5 🟢 Bullish
+
+🥈 2. TSLA
+💬 500 comments | 📊 Score: 222.4 🟢 Bullish
+
+...
+```
 
 ## References
 
@@ -161,6 +193,7 @@ Each formula produces a separate top 5 list with formula-specific metrics:
 - *The Intelligent Investor* by Benjamin Graham (Graham Number)
 - *Super Stocks* by Kenneth L. Fisher (Acquirer's Multiple)
 - *Financial Ratios, Discriminant Analysis and the Prediction of Corporate Bankruptcy* by Edward I. Altman (Z-Score)
+- [Tradestie Reddit WallstreetBets API](https://tradestie.com/apps/reddit/api/) (Social sentiment data)
 
 ## Disclaimer
 

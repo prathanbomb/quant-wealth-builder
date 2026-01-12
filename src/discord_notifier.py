@@ -13,11 +13,16 @@ PIOTROSKI_COLOR = 3066993  # Green for F-Score
 GRAHAM_COLOR = 15105570  # Orange for Graham Number
 ACQUIRER_COLOR = 10181038  # Purple for Acquirer's Multiple
 ALTMAN_COLOR = 2326507  # Red for Z-Score
+REDDIT_COLOR = 16776960  # Yellow/Orange for Reddit Momentum
 
 # Emoji for risk zone indicators
 SAFE_EMOJI = "🟢"
 GREY_EMOJI = "🟡"
 DISTRESS_EMOJI = "🔴"
+
+# Emoji for Reddit sentiment
+BULLISH_EMOJI = "🟢"
+BEARISH_EMOJI = "🔴"
 
 
 class DiscordNotifier:
@@ -250,6 +255,41 @@ class DiscordNotifier:
             "inline": False,
         }
 
+    def _format_reddit_field(self, stock: Dict[str, Any], rank: int) -> Dict[str, str]:
+        """
+        Format a Reddit Momentum stock as a Discord embed field.
+
+        Args:
+            stock: Stock data dictionary with keys:
+                - ticker: Stock symbol
+                - sentiment: "Bullish" or "Bearish"
+                - sentiment_score: Sentiment value
+                - no_of_comments: Discussion volume
+            rank: Display rank (1-indexed).
+
+        Returns:
+            Dict with 'name' and 'value' keys for Discord embed field.
+        """
+        ticker = stock.get("ticker", "N/A")
+        sentiment = stock.get("sentiment", "Unknown")
+        sentiment_score = stock.get("sentiment_score", 0)
+        no_of_comments = stock.get("no_of_comments", 0)
+
+        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+        medal = medals.get(rank, "🏅")
+
+        # Sentiment emoji
+        sentiment_emoji = BULLISH_EMOJI if sentiment == "Bullish" else BEARISH_EMOJI
+
+        return {
+            "name": f"{medal} {rank}. {ticker}",
+            "value": (
+                f"💬 {no_of_comments:,} comments | 📊 Score: {sentiment_score:.3f} "
+                f"{sentiment_emoji} {sentiment}"
+            ),
+            "inline": False,
+        }
+
     def _build_formula_embed(
         self,
         formula_name: str,
@@ -381,6 +421,21 @@ class DiscordNotifier:
                     color=ALTMAN_COLOR,
                     stocks=stocks,
                     formatter_fn=self._format_altman_field,
+                )
+                all_embeds.append(embed)
+
+        # Reddit Momentum embed
+        if "reddit_momentum" in enabled_formulas and "reddit_momentum" in results:
+            stocks = results["reddit_momentum"]
+            if stocks:
+                embed = self._build_formula_embed(
+                    formula_name="Reddit Momentum",
+                    title="🔥 Reddit Momentum",
+                    description=f"Top {len(stocks)} trending stocks on r/Wallstreetbets "
+                                "(discussion volume + positive sentiment)",
+                    color=REDDIT_COLOR,
+                    stocks=stocks,
+                    formatter_fn=self._format_reddit_field,
                 )
                 all_embeds.append(embed)
 
