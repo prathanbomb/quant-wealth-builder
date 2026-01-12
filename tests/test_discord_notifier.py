@@ -5,7 +5,17 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
-from src.discord_notifier import DiscordNotifier, EMBED_COLOR
+from src.discord_notifier import (
+    DiscordNotifier,
+    EMBED_COLOR,
+    PIOTROSKI_COLOR,
+    GRAHAM_COLOR,
+    ACQUIRER_COLOR,
+    ALTMAN_COLOR,
+    SAFE_EMOJI,
+    GREY_EMOJI,
+    DISTRESS_EMOJI,
+)
 
 
 @pytest.fixture
@@ -303,3 +313,291 @@ class TestSendMagicFormulaAlert:
         mock_post.assert_called_once()
         call_args = mock_post.call_args
         assert call_args.args[0] == notifier.webhook_url
+
+
+class TestFormatPiotroskiField:
+    """Tests for _format_piotroski_field method."""
+
+    def test_formats_fscore_stock(self, notifier):
+        """Should format Piotroski F-Score stock correctly."""
+        stock = {
+            "symbol": "AAPL",
+            "company_name": "Apple Inc.",
+            "price": 175.50,
+            "fscore": 8,
+        }
+
+        result = notifier._format_piotroski_field(stock, rank=1)
+
+        assert "🥇" in result["name"]
+        assert "AAPL" in result["name"]
+        assert "$175.50" in result["value"]
+        assert "F-Score: 8/9" in result["value"]
+
+
+class TestFormatGrahamField:
+    """Tests for _format_graham_field method."""
+
+    def test_formats_graham_stock_positive_margin(self, notifier):
+        """Should format Graham Number stock with positive margin."""
+        stock = {
+            "symbol": "IBM",
+            "company_name": "IBM Corp",
+            "price": 150.0,
+            "graham_number": 200.0,
+            "margin_of_safety": 25.0,
+        }
+
+        result = notifier._format_graham_field(stock, rank=1)
+
+        assert "IBM" in result["name"]
+        assert "$150.00" in result["value"]
+        assert "$200.00" in result["value"]
+        assert "+25.0%" in result["value"]
+
+    def test_formats_graham_stock_negative_margin(self, notifier):
+        """Should format Graham Number stock with negative margin."""
+        stock = {
+            "symbol": "OVER",
+            "company_name": "Overvalued Inc",
+            "price": 200.0,
+            "graham_number": 150.0,
+            "margin_of_safety": -25.0,
+        }
+
+        result = notifier._format_graham_field(stock, rank=1)
+
+        assert "-25.0%" in result["value"]
+
+
+class TestFormatAcquirerField:
+    """Tests for _format_acquirer_field method."""
+
+    def test_formats_acquirer_stock(self, notifier):
+        """Should format Acquirer's Multiple stock correctly."""
+        stock = {
+            "symbol": "XOM",
+            "company_name": "Exxon Mobil",
+            "price": 100.0,
+            "acquirer_multiple": 5.2,
+        }
+
+        result = notifier._format_acquirer_field(stock, rank=1)
+
+        assert "XOM" in result["name"]
+        assert "$100.00" in result["value"]
+        assert "5.20x" in result["value"]
+
+
+class TestFormatAltmanField:
+    """Tests for _format_altman_field method."""
+
+    def test_formats_altman_safe_zone(self, notifier):
+        """Should format Altman Z-Score stock in Safe Zone."""
+        stock = {
+            "symbol": "COST",
+            "company_name": "Costco",
+            "price": 550.0,
+            "zscore": 4.5,
+            "risk_zone": "Safe",
+        }
+
+        result = notifier._format_altman_field(stock, rank=1)
+
+        assert "COST" in result["name"]
+        assert "$550.00" in result["value"]
+        assert "4.50" in result["value"]
+        assert SAFE_EMOJI in result["value"]
+
+    def test_formats_altman_grey_zone(self, notifier):
+        """Should format Altman Z-Score stock in Grey Zone."""
+        stock = {
+            "symbol": "RISK",
+            "company_name": "Risky Corp",
+            "price": 100.0,
+            "zscore": 2.0,
+            "risk_zone": "Grey",
+        }
+
+        result = notifier._format_altman_field(stock, rank=1)
+
+        assert GREY_EMOJI in result["value"]
+
+    def test_formats_altman_distress_zone(self, notifier):
+        """Should format Altman Z-Score stock in Distress Zone."""
+        stock = {
+            "symbol": "DANGER",
+            "company_name": "Danger Inc",
+            "price": 50.0,
+            "zscore": 1.0,
+            "risk_zone": "Distress",
+        }
+
+        result = notifier._format_altman_field(stock, rank=1)
+
+        assert DISTRESS_EMOJI in result["value"]
+
+
+class TestSendMultiFormulaAlert:
+    """Tests for send_multi_formula_alert method."""
+
+    @patch("src.discord_notifier.requests.post")
+    def test_sends_all_enabled_formulas(self, mock_post, notifier):
+        """Should send embeds for all enabled formulas."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+
+        results = {
+            "magic_formula": [{"symbol": "A", "company_name": "A Corp", "price": 100,
+                               "magic_score": 10, "earnings_yield": 0.1, "roc": 0.2}],
+            "piotroski": [{"symbol": "B", "company_name": "B Corp", "price": 200,
+                           "fscore": 8}],
+            "graham": [{"symbol": "C", "company_name": "C Corp", "price": 150,
+                        "graham_number": 200, "margin_of_safety": 25.0}],
+            "acquirer": [{"symbol": "D", "company_name": "D Corp", "price": 80,
+                          "acquirer_multiple": 5.0}],
+            "altman": [{"symbol": "E", "company_name": "E Corp", "price": 300,
+                        "zscore": 4.5, "risk_zone": "Safe"}],
+        }
+        enabled = ["magic_formula", "piotroski", "graham", "acquirer", "altman"]
+
+        result = notifier.send_multi_formula_alert(results, "January 2025", enabled)
+
+        assert result is True
+        # Should have sent 1 message (header + 5 formula embeds = 6, fits in 10 limit)
+        assert mock_post.call_count == 1
+
+    @patch("src.discord_notifier.requests.post")
+    def test_sends_only_enabled_formulas(self, mock_post, notifier):
+        """Should only send embeds for enabled formulas."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+
+        results = {
+            "magic_formula": [{"symbol": "A", "company_name": "A Corp", "price": 100,
+                               "magic_score": 10, "earnings_yield": 0.1, "roc": 0.2}],
+            "piotroski": [{"symbol": "B", "company_name": "B Corp", "price": 200,
+                           "fscore": 8}],
+            "graham": [{"symbol": "C", "company_name": "C Corp", "price": 150,
+                        "graham_number": 200, "margin_of_safety": 25.0}],
+        }
+        # Only enable magic_formula and graham
+        enabled = ["magic_formula", "graham"]
+
+        result = notifier.send_multi_formula_alert(results, "January 2025", enabled)
+
+        assert result is True
+
+    @patch("src.discord_notifier.requests.post")
+    def test_handles_empty_formula_results(self, mock_post, notifier):
+        """Should skip formulas with no results."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+
+        results = {
+            "magic_formula": [{"symbol": "A", "company_name": "A Corp", "price": 100,
+                               "magic_score": 10, "earnings_yield": 0.1, "roc": 0.2}],
+            "piotroski": [],  # No results
+            "graham": [{"symbol": "C", "company_name": "C Corp", "price": 150,
+                        "graham_number": 200, "margin_of_safety": 25.0}],
+        }
+        enabled = ["magic_formula", "piotroski", "graham"]
+
+        result = notifier.send_multi_formula_alert(results, "January 2025", enabled)
+
+        assert result is True
+
+    @patch("src.discord_notifier.requests.post")
+    def test_returns_false_when_no_results(self, mock_post, notifier):
+        """Should return False when no formula has results."""
+        results = {
+            "magic_formula": [],
+            "piotroski": [],
+            "graham": [],
+            "acquirer": [],
+            "altman": [],
+        }
+        enabled = ["magic_formula", "piotroski", "graham", "acquirer", "altman"]
+
+        result = notifier.send_multi_formula_alert(results, "January 2025", enabled)
+
+        assert result is False
+        assert mock_post.call_count == 0
+
+    @patch("src.discord_notifier.requests.post")
+    def test_adds_header_to_first_message(self, mock_post, notifier):
+        """Should add header embed to first message."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+
+        results = {
+            "magic_formula": [{"symbol": "A", "company_name": "A Corp", "price": 100,
+                               "magic_score": 10, "earnings_yield": 0.1, "roc": 0.2}],
+        }
+        enabled = ["magic_formula"]
+
+        notifier.send_multi_formula_alert(results, "January 2025", enabled)
+
+        # First message should contain header + formula embed
+        first_call_payload = mock_post.call_args_list[0].kwargs.get("json")
+        embeds = first_call_payload.get("embeds", [])
+        assert len(embeds) == 2
+        assert "Multi-Formula Stock Screener" in embeds[0]["title"]
+
+    @patch("src.discord_notifier.requests.post")
+    def test_adds_disclaimer_to_last_embed(self, mock_post, notifier):
+        """Should add disclaimer to the last embed."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+
+        results = {
+            "magic_formula": [{"symbol": "A", "company_name": "A Corp", "price": 100,
+                               "magic_score": 10, "earnings_yield": 0.1, "roc": 0.2}],
+        }
+        enabled = ["magic_formula"]
+
+        notifier.send_multi_formula_alert(results, "January 2025", enabled)
+
+        # Get the last message payload
+        last_call_payload = mock_post.call_args_list[-1].kwargs.get("json")
+        last_embed = last_call_payload["embeds"][-1]
+        assert "footer" in last_embed
+        assert "Disclaimer" in last_embed["footer"]["text"]
+        assert "DYOR" in last_embed["footer"]["text"]
+
+    @patch("src.discord_notifier.requests.post")
+    def test_returns_false_on_webhook_failure(self, mock_post, notifier):
+        """Should return False if webhook fails."""
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_post.return_value = mock_response
+
+        results = {
+            "magic_formula": [{"symbol": "A", "company_name": "A Corp", "price": 100,
+                               "magic_score": 10, "earnings_yield": 0.1, "roc": 0.2}],
+        }
+        enabled = ["magic_formula"]
+
+        result = notifier.send_multi_formula_alert(results, "January 2025", enabled)
+
+        assert result is False
+
+    @patch("src.discord_notifier.requests.post")
+    def test_handles_request_exception(self, mock_post, notifier):
+        """Should return False on request exception."""
+        mock_post.side_effect = requests.exceptions.RequestException("Connection error")
+
+        results = {
+            "magic_formula": [{"symbol": "A", "company_name": "A Corp", "price": 100,
+                               "magic_score": 10, "earnings_yield": 0.1, "roc": 0.2}],
+        }
+        enabled = ["magic_formula"]
+
+        result = notifier.send_multi_formula_alert(results, "January 2025", enabled)
+
+        assert result is False

@@ -1,10 +1,10 @@
-"""Main orchestrator for Magic Formula DCA Bot."""
+"""Main orchestrator for Multi-Formula Stock Screening Bot."""
 
 import logging
 import sys
 import traceback
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -14,6 +14,7 @@ from src.config import (
     EXCLUDED_SECTORS,
     TARGET_EXCHANGES,
     TOP_N_STOCKS,
+    get_enabled_formulas,
     validate_config,
     ConfigurationError,
 )
@@ -25,6 +26,10 @@ from src.magic_formula import (
     rank_stocks,
     get_top_picks,
 )
+from src.piotroski_fscore import rank_by_fscore, get_top_fscore_picks
+from src.graham_number import rank_by_margin_of_safety, get_top_graham_picks
+from src.acquirer_multiple import rank_by_acquirer_multiple, get_top_acquirer_picks
+from src.altman_zscore import rank_by_zscore, get_top_zscore_picks
 
 # Set up logging
 logging.basicConfig(
@@ -51,7 +56,7 @@ def fetch_stock_data(
         excluded_sectors: Sectors to exclude.
 
     Returns:
-        DataFrame with stock data including financial metrics.
+        DataFrame with stock data including all financial metrics.
     """
     if excluded_sectors is None:
         excluded_sectors = []
@@ -73,28 +78,255 @@ def fetch_stock_data(
         if data is None:
             continue
 
-        stock_data.append({
+        # Build stock data dict with all required fields for all formulas
+        stock_record = {
+            # Basic info
             "symbol": data["symbol"],
             "company_name": data["company_name"],
             "price": data["price"],
+            # Magic Formula fields
             "ebit": data["ebit"],
             "enterprise_value": data["enterprise_value"],
             "total_assets": data["total_assets"],
             "current_liabilities": data["current_liabilities"],
-        })
+            # Piotroski F-Score fields
+            "net_income": data.get("net_income"),
+            "net_income_prev": data.get("net_income_prev"),
+            "operating_cash_flow": data.get("operating_cash_flow"),
+            "roa": data.get("roa"),
+            "roa_prev": data.get("roa_prev"),
+            "gross_margin": data.get("gross_margin"),
+            "gross_margin_prev": data.get("gross_margin_prev"),
+            "asset_turnover": data.get("asset_turnover"),
+            "asset_turnover_prev": data.get("asset_turnover_prev"),
+            "total_assets_prev": data.get("total_assets_prev"),
+            "long_term_debt": data.get("long_term_debt"),
+            "long_term_debt_prev": data.get("long_term_debt_prev"),
+            "current_ratio": data.get("current_ratio"),
+            "current_ratio_prev": data.get("current_ratio_prev"),
+            "shares_outstanding": data.get("shares_outstanding"),
+            "shares_outstanding_prev": data.get("shares_outstanding_prev"),
+            # Graham Number fields
+            "eps": data.get("eps"),
+            "book_value_per_share": data.get("book_value_per_share"),
+            # Acquirer's Multiple (uses ebit, enterprise_value already fetched)
+            # Altman Z-Score fields
+            "working_capital": data.get("working_capital"),
+            "retained_earnings": data.get("retained_earnings"),
+            "market_cap": data.get("market_cap"),
+            "total_liabilities": data.get("total_liabilities"),
+            "revenue": data.get("revenue"),
+        }
+
+        stock_data.append(stock_record)
 
     logger.info(f"Successfully fetched data for {len(stock_data)} stocks")
     return pd.DataFrame(stock_data)
 
 
+def run_magic_formula(df: pd.DataFrame) -> Optional[List[Dict[str, Any]]]:
+    """
+    Execute Magic Formula ranking and return top picks.
+
+    Args:
+        df: DataFrame with all required financial metrics.
+
+    Returns:
+        List of stock dictionaries for top picks, or None if no valid stocks.
+    """
+    logger.info("Calculating Magic Formula metrics...")
+
+    # Calculate earnings yield and ROC for each stock
+    df["earnings_yield"] = df.apply(
+        lambda row: calculate_earnings_yield(row["ebit"], row["enterprise_value"]),
+        axis=1,
+    )
+    df["roc"] = df.apply(
+        lambda row: calculate_roc(
+            row["ebit"], row["total_assets"], row["current_liabilities"]
+        ),
+        axis=1,
+    )
+
+    # Filter out stocks with invalid metrics
+    initial_count = len(df)
+    df_filtered = df.dropna(subset=["earnings_yield", "roc"])
+    filtered_count = len(df_filtered)
+
+    if filtered_count < initial_count:
+        logger.warning(
+            f"Filtered out {initial_count - filtered_count} stocks with invalid Magic Formula metrics"
+        )
+
+    if df_filtered.empty:
+        logger.warning("No stocks with valid Magic Formula metrics")
+        return None
+
+    logger.info(f"Calculated Magic Formula metrics for {len(df_filtered)} stocks")
+
+    # Rank stocks and get top picks
+    logger.info("Ranking stocks using Magic Formula...")
+    ranked_df = rank_stocks(df_filtered)
+    top_picks = get_top_picks(ranked_df, n=TOP_N_STOCKS)
+
+    # Handle case where fewer than requested stocks are available
+    if len(top_picks) < TOP_N_STOCKS:
+        logger.warning(
+            f"Only {len(top_picks)} valid Magic Formula stocks found (requested {TOP_N_STOCKS})"
+        )
+
+    # Log top picks
+    logger.info(f"Top {len(top_picks)} Magic Formula picks:")
+    for idx, row in top_picks.iterrows():
+        logger.info(
+            f"  {idx + 1}. {row['symbol']} - Score: {row['magic_score']} "
+            f"(EY: {row['earnings_yield']:.1%}, ROC: {row['roc']:.1%})"
+        )
+
+    return top_picks.to_dict("records")
+
+
+def run_piotroski(df: pd.DataFrame) -> Optional[List[Dict[str, Any]]]:
+    """
+    Execute Piotroski F-Score ranking and return top picks.
+
+    Args:
+        df: DataFrame with all required financial metrics.
+
+    Returns:
+        List of stock dictionaries for top picks, or None if no valid stocks.
+    """
+    logger.info("Ranking stocks using Piotroski F-Score...")
+
+    ranked_df = rank_by_fscore(df)
+
+    if ranked_df.empty:
+        logger.warning("No stocks with valid Piotroski F-Score")
+        return None
+
+    top_picks = get_top_fscore_picks(ranked_df, n=TOP_N_STOCKS)
+
+    if len(top_picks) < TOP_N_STOCKS:
+        logger.warning(
+            f"Only {len(top_picks)} valid Piotroski stocks found (requested {TOP_N_STOCKS})"
+        )
+
+    logger.info(f"Top {len(top_picks)} Piotroski F-Score picks:")
+    for idx, row in top_picks.iterrows():
+        logger.info(f"  {idx + 1}. {row['symbol']} - F-Score: {int(row['fscore'])}/9")
+
+    return top_picks.to_dict("records")
+
+
+def run_graham(df: pd.DataFrame) -> Optional[List[Dict[str, Any]]]:
+    """
+    Execute Graham Number ranking and return top picks.
+
+    Args:
+        df: DataFrame with all required financial metrics.
+
+    Returns:
+        List of stock dictionaries for top picks, or None if no valid stocks.
+    """
+    logger.info("Ranking stocks using Graham Number...")
+
+    ranked_df = rank_by_margin_of_safety(df)
+
+    if ranked_df.empty:
+        logger.warning("No stocks with valid Graham Number")
+        return None
+
+    top_picks = get_top_graham_picks(ranked_df, n=TOP_N_STOCKS)
+
+    if len(top_picks) < TOP_N_STOCKS:
+        logger.warning(
+            f"Only {len(top_picks)} valid Graham Number stocks found (requested {TOP_N_STOCKS})"
+        )
+
+    logger.info(f"Top {len(top_picks)} Graham Number picks:")
+    for idx, row in top_picks.iterrows():
+        logger.info(
+            f"  {idx + 1}. {row['symbol']} - Graham: ${row['graham_number']:.2f}, "
+            f"Margin: {row['margin_of_safety']:.1f}%"
+        )
+
+    return top_picks.to_dict("records")
+
+
+def run_acquirer(df: pd.DataFrame) -> Optional[List[Dict[str, Any]]]:
+    """
+    Execute Acquirer's Multiple ranking and return top picks.
+
+    Args:
+        df: DataFrame with all required financial metrics.
+
+    Returns:
+        List of stock dictionaries for top picks, or None if no valid stocks.
+    """
+    logger.info("Ranking stocks using Acquirer's Multiple...")
+
+    ranked_df = rank_by_acquirer_multiple(df)
+
+    if ranked_df.empty:
+        logger.warning("No stocks with valid Acquirer's Multiple")
+        return None
+
+    top_picks = get_top_acquirer_picks(ranked_df, n=TOP_N_STOCKS)
+
+    if len(top_picks) < TOP_N_STOCKS:
+        logger.warning(
+            f"Only {len(top_picks)} valid Acquirer's Multiple stocks found (requested {TOP_N_STOCKS})"
+        )
+
+    logger.info(f"Top {len(top_picks)} Acquirer's Multiple picks:")
+    for idx, row in top_picks.iterrows():
+        logger.info(f"  {idx + 1}. {row['symbol']} - EV/EBIT: {row['acquirer_multiple']:.2f}x")
+
+    return top_picks.to_dict("records")
+
+
+def run_altman(df: pd.DataFrame) -> Optional[List[Dict[str, Any]]]:
+    """
+    Execute Altman Z-Score ranking and return top picks.
+
+    Args:
+        df: DataFrame with all required financial metrics.
+
+    Returns:
+        List of stock dictionaries for top picks, or None if no valid stocks.
+    """
+    logger.info("Ranking stocks using Altman Z-Score...")
+
+    ranked_df = rank_by_zscore(df)
+
+    if ranked_df.empty:
+        logger.warning("No stocks in Safe Zone (Altman Z-Score)")
+        return None
+
+    top_picks = get_top_zscore_picks(ranked_df, n=TOP_N_STOCKS)
+
+    if len(top_picks) < TOP_N_STOCKS:
+        logger.warning(
+            f"Only {len(top_picks)} Safe Zone stocks found (requested {TOP_N_STOCKS})"
+        )
+
+    logger.info(f"Top {len(top_picks)} Altman Z-Score picks:")
+    for idx, row in top_picks.iterrows():
+        logger.info(
+            f"  {idx + 1}. {row['symbol']} - Z-Score: {row['zscore']:.2f} ({row['risk_zone']})"
+        )
+
+    return top_picks.to_dict("records")
+
+
 def run() -> int:
     """
-    Execute the Magic Formula DCA Bot logic.
+    Execute the Multi-Formula Stock Screening Bot logic.
 
     Returns:
         Exit code (0 for success, 1 for failure).
     """
-    logger.info("Starting Magic Formula DCA Bot")
+    logger.info("Starting Multi-Formula Stock Screening Bot")
 
     # Load and validate configuration
     try:
@@ -103,6 +335,15 @@ def run() -> int:
     except ConfigurationError as e:
         logger.error(f"Configuration error: {e}")
         return 1
+
+    # Get enabled formulas
+    enabled_formulas = get_enabled_formulas()
+
+    if not enabled_formulas:
+        logger.warning("No formulas are enabled. Please enable at least one formula.")
+        return 1
+
+    logger.info(f"Enabled formulas: {', '.join(enabled_formulas)}")
 
     # Initialize clients
     stock_client = StockDataClient()
@@ -140,70 +381,56 @@ def run() -> int:
         logger.error("No valid stock data after fetching financials")
         return 1
 
-    # Calculate earnings yield and ROC for each stock
-    logger.info("Calculating Magic Formula metrics...")
-    df["earnings_yield"] = df.apply(
-        lambda row: calculate_earnings_yield(row["ebit"], row["enterprise_value"]),
-        axis=1,
-    )
-    df["roc"] = df.apply(
-        lambda row: calculate_roc(
-            row["ebit"], row["total_assets"], row["current_liabilities"]
-        ),
-        axis=1,
-    )
+    logger.info(f"Successfully fetched data for {len(df)} stocks")
 
-    # Filter out stocks with invalid metrics
-    initial_count = len(df)
-    df = df.dropna(subset=["earnings_yield", "roc"])
-    filtered_count = len(df)
+    # Execute each enabled formula and collect results
+    results: Dict[str, List[Dict[str, Any]]] = {}
 
-    if filtered_count < initial_count:
-        logger.warning(
-            f"Filtered out {initial_count - filtered_count} stocks with invalid metrics"
-        )
+    # Make a copy for Magic Formula since it modifies the DataFrame
+    if "magic_formula" in enabled_formulas:
+        result = run_magic_formula(df.copy())
+        if result:
+            results["magic_formula"] = result
 
-    if df.empty:
-        logger.error("No stocks with valid metrics after calculation")
+    # Other formulas don't modify the DataFrame, so no copy needed
+    if "piotroski" in enabled_formulas:
+        result = run_piotroski(df)
+        if result:
+            results["piotroski"] = result
+
+    if "graham" in enabled_formulas:
+        result = run_graham(df)
+        if result:
+            results["graham"] = result
+
+    if "acquirer" in enabled_formulas:
+        result = run_acquirer(df)
+        if result:
+            results["acquirer"] = result
+
+    if "altman" in enabled_formulas:
+        result = run_altman(df)
+        if result:
+            results["altman"] = result
+
+    # Check if we have any results
+    if not results:
+        logger.error("No valid results from any enabled formula")
         return 1
-
-    logger.info(f"Calculated metrics for {len(df)} stocks")
-
-    # Rank stocks and get top picks
-    logger.info("Ranking stocks using Magic Formula...")
-    ranked_df = rank_stocks(df)
-    top_picks = get_top_picks(ranked_df, n=TOP_N_STOCKS)
-
-    # Handle case where fewer than requested stocks are available
-    if len(top_picks) < TOP_N_STOCKS:
-        logger.warning(
-            f"Only {len(top_picks)} valid stocks found (requested {TOP_N_STOCKS}). "
-            f"Proceeding with available stocks."
-        )
-
-    # Log top picks
-    logger.info(f"Top {len(top_picks)} Magic Formula picks:")
-    for idx, row in top_picks.iterrows():
-        logger.info(
-            f"  {idx + 1}. {row['symbol']} - Score: {row['magic_score']} "
-            f"(EY: {row['earnings_yield']:.1%}, ROC: {row['roc']:.1%})"
-        )
 
     # Get current month/year
     month_year = datetime.now().strftime("%B %Y")
 
-    # Convert top picks to list of dicts for Discord notifier
-    top_picks_list = top_picks.to_dict("records")
-
     # Send Discord notification
     logger.info("Sending Discord notification...")
-    success = discord_notifier.send_magic_formula_alert(
-        stocks=top_picks_list,
+    success = discord_notifier.send_multi_formula_alert(
+        results=results,
         month_year=month_year,
+        enabled_formulas=enabled_formulas,
     )
 
     if success:
-        logger.info("Magic Formula DCA Bot completed successfully")
+        logger.info("Multi-Formula Stock Screening Bot completed successfully")
         return 0
     else:
         logger.error("Failed to send Discord notification")
