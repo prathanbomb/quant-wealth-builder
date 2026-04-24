@@ -1,11 +1,11 @@
 name: Magic Formula DCA Bot
 
 on:
-  # Run every weekday (Mon-Fri) at 14:00 UTC (9:00 AM EST)
-  schedule:
-    - cron: '0 14 * * 1-5'
+  # Disabled: migrated to self-hosted VM (Docker + systemd timer)
+  # schedule:
+  #   - cron: '0 14 * * 1-5'
 
-  # Allow manual triggering from GitHub Actions UI
+  # Allow manual triggering from GitHub Actions UI (emergency fallback)
   workflow_dispatch:
 
 jobs:
