@@ -1,5 +1,5 @@
 services:
   quant-screener:
-    build: .
+    image: prathanbomb/quant-wealth-builder:latest
     env_file: .env
     restart: "no"
